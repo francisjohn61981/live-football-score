@@ -58,7 +58,7 @@ def create_match(Hometeam: str, Awayteam:str):
     }
 
 @app.post("/goalscored", tags=["Update"])
-def create_match(matchid:str, minute: int, scorer:str, team: str):
+def goal_scored(matchid:str, minute: int, scorer:str, team: str):
     for existing_match in matches:
         if existing_match.matchid==matchid:
             new_goal = Goal(
@@ -75,5 +75,5 @@ def aggregate_score(matchid:str):
         if existing_match.matchid==matchid:
             home_goals = sum(1 for g in existing_match.goals if g.team == existing_match.Hometeam)
             away_goals = sum(1 for g in existing_match.goals if g.team == existing_match.Awayteam)
-            return {f"{existing_match.Hometeam}" : home_goals, f"{existing_match.Awayteam}" :away_goals }
+            return {f"{existing_match.Hometeam} : {home_goals} - {existing_match.Awayteam} : {away_goals}"}
     return{"message": "invalid request"}
