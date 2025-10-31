@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
-from typing import List
+from typing import List, Annotated
 import uuid
+from auth import create_access_token, check_token
 
 app = FastAPI(
     title="ScoreLive",
@@ -26,6 +27,11 @@ matches: List[Match] = []
 def read_root():
     return {"message": "Welcome to ScoreLive"}
 
+@app.get("/token")
+def login_for_access_token(username:str):
+    token=create_access_token({"sub":username})
+    return {"access_token":token, "token_type": "bearer"}
+
 @app.get("/livematches/{id}", tags=["Matches"])
 def read_list(id: str):
     for existing_match in matches:
@@ -33,14 +39,18 @@ def read_list(id: str):
             return {"matches" : existing_match}
     return {"message" : "invalid request"}
 
-@app.get("/get_all_matches", tags=["Matches"])
-def get_all_matches():
-    for existing_match in matches:
-        return {"matches" : existing_match}
-    return {"message" : "invalid request"}
-
+#--------protected routes-----------------------#
 @app.post("/newmatch", tags=["Update"])
-def create_match(Hometeam: str, Awayteam:str):
+def create_match(Hometeam: str, Awayteam:str ,
+                 authorization: Annotated[str|None, Header()] = None):
+    #print(authorization)
+    if not authorization or not authorization.startswith("Bearer"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Missing or invalid authorization header")
+    
+    token = authorization.split(" ")[1]
+    check_token(token)
+
     match_uuid = str(uuid.uuid4())
     new_match = Match(
         matchid=match_uuid,
@@ -48,7 +58,7 @@ def create_match(Hometeam: str, Awayteam:str):
         Awayteam=Awayteam,
         goals=[]
     )
-
+    
     matches.append(new_match)
     return {
         "message": "New match created successfully",
@@ -56,6 +66,14 @@ def create_match(Hometeam: str, Awayteam:str):
         "Hometeam": Hometeam,
         "Awayteam": Awayteam
     }
+#--------protected routes-----------------------#
+
+@app.get("/get_all_matches", tags=["Matches"])
+def get_all_matches():
+    for existing_match in matches:
+        return {"matches" : existing_match}
+    return {"message" : "invalid request"}
+
 
 @app.post("/goalscored", tags=["Update"])
 def goal_scored(matchid:str, minute: int, scorer:str, team: str):
