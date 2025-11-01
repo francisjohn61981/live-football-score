@@ -15,7 +15,7 @@ def create_access_token(data: dict):
     to_encode.update({"exp":datetime.utcnow()+ timedelta(minutes=60)})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-token_dependency = Annotated [str, Depends(oauth2_scheme)]
+token_dependency = Annotated[str, Depends(oauth2_scheme)]
 
 def check_token(token: token_dependency):
     try:
