@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Annotated
 from datetime import datetime
@@ -6,11 +6,12 @@ from auth import create_access_token, check_token
 import uuid
 import sqlalchemy
 from databases import Database
+from contextlib import asynccontextmanager
 
 # --------------------------- #
 # Database setup
 # --------------------------- #
-DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost:5432/scorelive"
+DATABASE_URL = "postgresql+asyncpg://postgres:admin@localhost:5432/scorelive"
 
 database = Database(DATABASE_URL)
 metadata = sqlalchemy.MetaData()
@@ -38,12 +39,26 @@ engine = sqlalchemy.create_engine(str(DATABASE_URL).replace("+asyncpg", ""))
 metadata.create_all(engine)
 
 # --------------------------- #
+# Startup / Shutdown events
+# --------------------------- #
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        await database.connect()
+        print("✅ Connected to the database.")
+        yield
+    finally:
+        await database.disconnect()
+        print("🛑 Disconnected from the database.")
+
+# --------------------------- #
 # FastAPI setup
 # --------------------------- #
 app = FastAPI(
     title="ScoreLive",
     description="To check and update football match scores",
     version="2.0",
+    lifespan=lifespan
 )
 
 # --------------------------- #
@@ -61,17 +76,6 @@ class Match(BaseModel):
     goals: List[Goal] = []
 
 # --------------------------- #
-# Startup / Shutdown events
-# --------------------------- #
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
-
-# --------------------------- #
 # Routes
 # --------------------------- #
 @app.get("/", tags=["Root"])
@@ -80,7 +84,7 @@ async def read_root():
 
 @app.get("/token")
 async def login_for_access_token(username: str):
-    token = create_access_token({"sub": username})
+    token = await create_access_token({"sub": username})
     return {"access_token": token, "token_type": "bearer"}
 
 # Protected route
@@ -88,15 +92,8 @@ async def login_for_access_token(username: str):
 async def create_match(
     Hometeam: str,
     Awayteam: str,
-    authorization: Annotated[str | None, Header()] = None
+    token: Annotated[str, Depends(check_token)]
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Missing or invalid authorization header")
-
-    token = authorization.split(" ")[1]
-    check_token(token)
-
     match_uuid = str(uuid.uuid4())
     query = matches_table.insert().values(
         matchid=match_uuid, hometeam=Hometeam, awayteam=Awayteam
